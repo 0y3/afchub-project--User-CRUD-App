@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
+use App\Models\User;
+use App\Models\CompanyDepartment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -127,5 +129,76 @@ class CompanyController extends Controller
         Company::where('id', $id)->where('user_id', Auth::id())->delete();
         return redirect()->route('company')
                         ->with('success','Company deleted');
+    }
+
+    public function nestedrel(Request $request)
+    {
+        $relCompany = Company::with([
+            'users',
+            'companies_depatment'
+        ])->get();
+
+        $relUser = User::with([
+            'users',
+            'company'=>[
+                'companies_depatment'  => fn ($query) => $query->latest(), 
+            ],
+        ])->get();
+
+        $cb = function ($query){
+            $query->where('is_deleted', 'N');
+        };
+
+        $books = User::with([
+                    'author'            => fn ($query) => $query->where('is_deleted', 'N'), 
+                    'author.contacts'   => fn ($query2) => $query2->where('is_deleted', 'N'),
+                ])->get();
+        
+
+
+           
+        $books = User::with(['author.contact' => $cb])
+                       ->whereHas('author', function($query) use ($cb) { $query->where('is_online', 'Y')->whereHas('contacts', $cb);})
+                ->get();
+
+        $books  = User::with(['author' => function ($query) { 
+                                    $query->where('is_active', 0); // auther condition
+                                        $query->with(['contacts' => function ($q2) {
+                                            $q2->where('is_active', 1); // contacts condition
+                                         }
+                                        ]);
+                                    }
+                ])->get();
+
+        $books = User::with([
+                    'Queue' => function($query) { 
+                        $query->select('PRIVATE','queue_naam')
+                        ->withDefault(['PRIVATE' => '','queue_naam' => '']); 
+                    },
+                    'AgentStatus' => function($query) { 
+                        $query->select('PRIVATE','status','status_colour')
+                        ->withDefault(['PRIVATE' => '','status' => '','status_colour' => '']); 
+                    },
+                    'author' => function($query) { 
+                        $query->select('PRIVATE','naam')
+                        ->where('is_active', 0)->withDefault(['PRIVATE' => '','naam' => '']); // auther condition
+                    },
+                    'author.contacts' => function($query) { 
+                        $query->select('PRIVATE','naam')->withDefault(['PRIVATE' => '','naam' => '']); 
+                    },
+                    'authorTbl' => function($query) { 
+                            $query->select('PRIVATE','naam')
+                            ->where('is_active', 0)->withDefault(['PRIVATE' => '','naam' => '']) // auther condition
+                            ->with([
+                                'contacts' => fn($query) => $query->select('PRIVATE','naam')->withDefault(['PRIVATE' => '','naam' => '']),
+                            
+                            ]);
+                    },
+                ])->get();
+                
+        dd($relCompany);
+        //dd(Company::whereBelongsTo(Auth::user())->get());
+        // dd(Auth::user()->company());
+        // dd(User::find(Auth::user()->id)->company());
     }
 }
